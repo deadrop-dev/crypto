@@ -8,23 +8,27 @@ Deadrop uses client-side encryption so the server never sees plaintext. The encr
 
 ## Algorithms
 
-| Parameter | Value |
-|-----------|-------|
-| Cipher | AES-256-GCM |
-| Key length | 256 bits (32 bytes) |
-| IV length | 96 bits (12 bytes) |
-| IV generation | Cryptographically random (`crypto.getRandomValues`) |
-| Auth tag | 128 bits (appended to ciphertext by GCM) |
-| Key hash | SHA-256, base64url-encoded, truncated to 22 characters (128 bits) |
-| Encoding | Base64url (RFC 4648 section 5, no padding) |
-| Text encoding | UTF-8 (no Unicode normalization — raw codepoints as-is) |
+| Parameter     | Value                                                             |
+| ------------- | ----------------------------------------------------------------- |
+| Cipher        | AES-256-GCM                                                       |
+| Key length    | 256 bits (32 bytes)                                               |
+| IV length     | 96 bits (12 bytes)                                                |
+| IV generation | Cryptographically random (`crypto.getRandomValues`)               |
+| Auth tag      | 128 bits (appended to ciphertext by GCM)                          |
+| Key hash      | SHA-256, base64url-encoded, truncated to 22 characters (128 bits) |
+| Encoding      | Base64url (RFC 4648 section 5, no padding)                        |
+| Text encoding | UTF-8 (no Unicode normalization — raw codepoints as-is)           |
 
 ## Key Generation
 
 A fresh AES-256-GCM key is generated for every secret using the Web Crypto API:
 
-```
-key = crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, extractable=true, ["encrypt", "decrypt"])
+```ts
+key = crypto.subtle.generateKey(
+  { name: "AES-GCM", length: 256 },
+  (extractable = true),
+  ["encrypt", "decrypt"],
+);
 ```
 
 The raw key bytes (32 bytes) are exported and encoded as base64url (43 characters, no padding).
@@ -33,19 +37,27 @@ The raw key bytes (32 bytes) are exported and encoded as base64url (43 character
 
 ## Encryption
 
-```
-iv = crypto.getRandomValues(new Uint8Array(12))
-plaintext_bytes = TextEncoder.encode(plaintext)
-ciphertext = crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext_bytes)
+```ts
+iv = crypto.getRandomValues(new Uint8Array(12));
+plaintext_bytes = TextEncoder.encode(plaintext);
+ciphertext = crypto.subtle.encrypt(
+  { name: "AES-GCM", iv },
+  key,
+  plaintext_bytes,
+);
 ```
 
 The output is `ciphertext || 16-byte GCM authentication tag` (the Web Crypto API appends the tag automatically). Both ciphertext+tag and IV are base64url-encoded for transport.
 
 ## Decryption
 
-```
-plaintext_bytes = crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext_with_tag)
-plaintext = TextDecoder.decode(plaintext_bytes)
+```ts
+plaintext_bytes = crypto.subtle.decrypt(
+  { name: "AES-GCM", iv },
+  key,
+  ciphertext_with_tag,
+);
+plaintext = TextDecoder.decode(plaintext_bytes);
 ```
 
 GCM authentication is verified automatically. If the ciphertext, tag, or key is wrong, decryption throws. This is the primary integrity and authenticity mechanism.
@@ -54,10 +66,10 @@ GCM authentication is verified automatically. If the ciphertext, tag, or key is 
 
 The server stores a hash of the key to verify the client holds the correct key before performing the destructive burn-on-read:
 
-```
-raw_key = crypto.subtle.exportKey("raw", key)
-hash = crypto.subtle.digest("SHA-256", raw_key)
-key_hash = base64url(hash).slice(0, 22)
+```ts
+raw_key = crypto.subtle.exportKey("raw", key);
+hash = crypto.subtle.digest("SHA-256", raw_key);
+key_hash = base64url(hash).slice(0, 22);
 ```
 
 The 22-character hash provides 128 bits of collision resistance. This is an access-control gate — a hash collision would cause the server to burn the secret and return ciphertext to a client that cannot decrypt it. At 128 bits, the probability of accidental or adversarial collision is negligible (2^-128).
@@ -68,24 +80,35 @@ The server compares the client-provided `key_hash` against its stored value usin
 
 When a password is set, the URL key is combined with the password via PBKDF2 to derive a new encryption key:
 
-```
-password_key = crypto.subtle.importKey("raw", TextEncoder.encode(password), "PBKDF2", false, ["deriveKey"])
+```ts
+password_key = crypto.subtle.importKey(
+  "raw",
+  TextEncoder.encode(password),
+  "PBKDF2",
+  false,
+  ["deriveKey"],
+);
 derived_key = crypto.subtle.deriveKey(
-  { name: "PBKDF2", salt: url_key_raw_bytes, iterations: 600000, hash: "SHA-256" },
+  {
+    name: "PBKDF2",
+    salt: url_key_raw_bytes,
+    iterations: 600000,
+    hash: "SHA-256",
+  },
   password_key,
   { name: "AES-GCM", length: 256 },
-  extractable=true,
-  ["encrypt", "decrypt"]
-)
+  (extractable = true),
+  ["encrypt", "decrypt"],
+);
 ```
 
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| KDF | PBKDF2 | Web Crypto API native — zero dependencies, works in all browsers and Node.js. Argon2id would be stronger against GPU attacks but requires a WASM or native dependency, which conflicts with the auditability goal. |
-| Hash | SHA-256 | Standard, hardware-accelerated on most platforms |
-| Iterations | 600,000 | Meets OWASP 2024 minimum recommendation for PBKDF2-SHA256 |
-| Salt | Raw URL key bytes (32 bytes) | Each secret has a unique random key, so the salt is unique per secret. Using the URL key as salt is an intentional design choice — it avoids storing or transmitting a separate salt value while providing 256 bits of salt entropy. |
-| Output | AES-256-GCM key | |
+| Parameter  | Value                        | Rationale                                                                                                                                                                                                                            |
+| ---------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| KDF        | PBKDF2                       | Web Crypto API native — zero dependencies, works in all browsers and Node.js. Argon2id would be stronger against GPU attacks but requires a WASM or native dependency, which conflicts with the auditability goal.                   |
+| Hash       | SHA-256                      | Standard, hardware-accelerated on most platforms                                                                                                                                                                                     |
+| Iterations | 600,000                      | Meets OWASP 2024 minimum recommendation for PBKDF2-SHA256                                                                                                                                                                            |
+| Salt       | Raw URL key bytes (32 bytes) | Each secret has a unique random key, so the salt is unique per secret. Using the URL key as salt is an intentional design choice — it avoids storing or transmitting a separate salt value while providing 256 bits of salt entropy. |
+| Output     | AES-256-GCM key              |                                                                                                                                                                                                                                      |
 
 The `key_hash` sent to the server is computed from the **derived** key, not the URL key. The server verifies that the client-provided hash of the derived key matches the stored hash — this confirms the client knows both the URL key and the correct password, without the server ever seeing either.
 
