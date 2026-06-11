@@ -274,3 +274,30 @@ describe("end-to-end: create → view", () => {
     expect(await computeKeyHash(wrongDerived)).not.toBe(keyHash);
   });
 });
+
+describe("password Unicode normalization (SPEC v2.0)", () => {
+  const salt = new Uint8Array(32).fill(7);
+  const composed = "café";        // é as single codepoint
+  const decomposed = "café";     // e + combining acute
+
+  it("derives the same key for composed and decomposed forms by default", async () => {
+    const k1 = await deriveKeyWithPassword(salt, composed);
+    const k2 = await deriveKeyWithPassword(salt, decomposed);
+    expect(await exportKey(k1)).toBe(await exportKey(k2));
+  });
+
+  it("preserves raw-codepoint derivation when normalization is disabled (legacy fallback)", async () => {
+    const k1 = await deriveKeyWithPassword(salt, composed, { normalization: "none" });
+    const k2 = await deriveKeyWithPassword(salt, decomposed, { normalization: "none" });
+    expect(await exportKey(k1)).not.toBe(await exportKey(k2));
+  });
+
+  it("NFC default matches explicit nfc option and legacy mode for ASCII", async () => {
+    const a = await deriveKeyWithPassword(salt, "hunter2");
+    const b = await deriveKeyWithPassword(salt, "hunter2", { normalization: "nfc" });
+    const c = await deriveKeyWithPassword(salt, "hunter2", { normalization: "none" });
+    const ea = await exportKey(a);
+    expect(ea).toBe(await exportKey(b));
+    expect(ea).toBe(await exportKey(c));
+  });
+});

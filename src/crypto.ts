@@ -106,14 +106,28 @@ export async function computeKeyHashFromB64(keyB64: string, length: number = KEY
   return bytesToBase64Url(new Uint8Array(hash)).slice(0, length);
 }
 
+export interface DeriveKeyOptions {
+  /**
+   * Unicode normalization applied to the password before UTF-8 encoding.
+   * "nfc" (default, SPEC v2.0): visually identical passwords derive the same
+   * key regardless of composed/decomposed input form.
+   * "none": raw codepoints as typed — only for the legacy decrypt fallback on
+   * secrets created by pre-2.0 clients (self-retiring: max TTL is 7 days).
+   */
+  normalization?: "nfc" | "none";
+}
+
 /** Derive AES-256-GCM key from password + URL key via PBKDF2 */
 export async function deriveKeyWithPassword(
   urlKeyRaw: Uint8Array,
   password: string,
+  options: DeriveKeyOptions = {},
 ): Promise<CryptoKey> {
+  const normalized =
+    options.normalization === "none" ? password : password.normalize("NFC");
   const passwordKey = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(password),
+    new TextEncoder().encode(normalized),
     "PBKDF2",
     false,
     ["deriveKey"],

@@ -16,7 +16,7 @@ export {
   KEY_HASH_LENGTH,
 } from "./crypto.js";
 
-export type { EncryptedPayload } from "./crypto.js";
+export type { EncryptedPayload, DeriveKeyOptions } from "./crypto.js";
 
 export {
   bytesToBase64Url,
