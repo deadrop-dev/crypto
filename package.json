@@ -1,6 +1,6 @@
 {
   "name": "@deadrop/crypto",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Auditable AES-256-GCM encryption library for Deadrop. Zero dependencies.",
   "license": "MIT",
   "type": "module",
