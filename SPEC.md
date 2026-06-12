@@ -1,8 +1,12 @@
 # Deadrop Cryptographic & Protocol Specification
 
-Version: 2.0
+Version: 2.1
 
 ## Changelog
+
+**2.1 (2026-06-12)** — additive over 2.0.
+
+- **Request flow (Request-a-Secret) is specified** (§9): ephemeral ECDH P-256 + HKDF-SHA256 hybrid encryption, claim-proof gate, atomic claim-burn, endpoint contract. Implementing §9 is optional; implementations that offer a reverse flow MUST implement it exactly as specified.
 
 **2.0 (2026-06-12)** — additive over 1.1; everything in 1.1 not contradicted here remains in force.
 
@@ -227,6 +231,43 @@ Blindly trusting `X-Forwarded-For` moves IP spoofing from "impossible" to "trivi
 ### §8 Implementation compliance
 
 Every implementation (SaaS, self-host server, CLI, SDKs) MUST pass the `@deadrop/crypto` test vectors end-to-end and honor this section. Implementations are spec-compatible, not code-shared.
+
+## §9 Request Flow (Request-a-Secret) — Normative since 2.1
+
+The reverse flow: a **requester** asks for a secret; a **responder** supplies it; the requester retrieves it once. The forward flow's symmetric key cannot work here — the request link is transmitted over untrusted channels, so anything it carries must be useless for decryption. The flow is therefore hybrid: the responder encrypts to the requester's ephemeral public key.
+
+### §9.1 Algorithms
+
+| Parameter | Value |
+| --- | --- |
+| Key agreement | ECDH, curve P-256 (Web Crypto `ECDH`/`P-256`) |
+| KDF | HKDF-SHA256, 16-byte random salt, info = UTF-8 `"deadrop/request-wrap/v1"`, output 256 bits |
+| Key wrap | AES-256-GCM over the raw 32 data-key bytes, fresh random 96-bit `wrapIv` (output 48 bytes: 32 + 16 tag) |
+| Data encryption | Identical to the forward flow (fresh AES-256-GCM key K, §Encryption) |
+| Public key encoding | Raw uncompressed point (65 bytes, `0x04‖X‖Y`), base64url |
+| Private key encoding | PKCS8, base64url (URL fragment of the claim link only) |
+| Claim proof | `base64url(SHA-256(UTF-8 bytes of privateKeyB64)))` truncated to 22 chars |
+| Fingerprint | First 8 chars of `base64url(SHA-256(raw 65-byte public key))` |
+
+### §9.2 Protocol
+
+**Create (requester):** generate an ephemeral ECDH P-256 keypair. `POST /api/requests` with `{id, publicKey, claimProof, prompt?, expiresMinutes}`. `id` uses the secret-id grammar; `prompt` ≤ 140 chars, semi-public (same caveat as password hints); `expiresMinutes` clamped to `[1, 10080]`, never rejected for range. Duplicate `id` → 409. Two links result: the **request link** `/r/{id}` (no fragment — the responder gets the public key from the server) and the **claim link** `/r/{id}/claim#{privateKeyB64}` (the private key exists ONLY in this fragment; losing it makes the response unrecoverable).
+
+**Fulfill (responder):** `GET /api/requests/{id}` → `{publicKey, prompt, fulfilled}` (`prompt` is the empty string when none was set). Implementations cap the response ciphertext at their configured request-body ceiling (the reference SaaS: 64 KB at the server edge). Generate a fresh AES-256-GCM data key K; encrypt the secret with K exactly per the forward flow. Generate an ephemeral responder ECDH keypair; `sharedBits = ECDH(responderPrivate, requesterPublic)`; `wrappingKey = HKDF-SHA256(sharedBits, salt, info)` per §9.1; `wrappedKey = AES-GCM(wrappingKey, wrapIv, raw K)`. `POST /api/requests/{id}/response` with `{encrypted, iv, wrappedKey, wrapIv, hkdfSalt, responderPublicKey}`. Exactly one response per request: already fulfilled → 409, atomically enforced (no window in which two responders both get 201).
+
+**Claim (requester):** `GET /api/requests/{id}/response?proof={claimProof}`. Status precedence is normative: **404** unknown/expired/already-claimed (indistinguishable) → **403** proof mismatch (nothing burned) → **202** valid proof but not yet fulfilled (nothing burned; body `{"status":"pending"}`) → **200** blob returned and the entire request record (request + response) deleted in the same atomic step (§3 contract, claim-burn). A missing or malformed proof is treated as a mismatching proof — but precedence still applies: an unknown id yields 404 regardless of the proof's shape. Decrypt: `ECDH(requesterPrivate, responderPublicKey)` → same HKDF → unwrap K → decrypt.
+
+### §9.3 Server obligations
+
+- Store only: `id`, `publicKey`, `claimProof`, optional `prompt`, expiry; after fulfillment additionally the opaque response fields. None of it decrypts anything.
+- The response inherits the request's original expiry (one deadline for the whole exchange).
+- Claim-burn MUST be a single atomic compare-and-delete over the whole record; two concurrent correct-proof claims MUST resolve to exactly one 200 and one 404.
+- Rate limits (§7): `POST /api/requests` joins the create bucket; the other three request endpoints join the retrieval-class bucket.
+- Never log `prompt`, key material, proofs, or response fields.
+
+### §9.4 Threat model honesty
+
+The server hands the responder the requester's public key, so a malicious server could substitute its own (machine-in-the-middle) and read the response. Mitigation: both the fulfill and claim UIs MUST display the §9.1 fingerprint of the requester public key they are using, so the parties can compare out-of-band. This is honest mitigation, not elimination — the same residual trust in served JavaScript applies to every zero-knowledge web application. State it; do not pretend otherwise.
 
 ## Security Properties
 

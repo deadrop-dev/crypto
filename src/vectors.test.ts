@@ -162,3 +162,55 @@ describe("negative vectors: non-extractable key with computeKeyHash", () => {
     await expect(computeKeyHash(nonExtractable)).rejects.toThrow();
   });
 });
+
+describe("test vectors: request flow (SPEC §9)", () => {
+  const { request_vectors } = data;
+
+  for (const v of request_vectors) {
+    it(`derives the same wrapping key from both sides and unwraps: ${v.name}`, async () => {
+      const { deriveWrappingKey, wrapDataKey, unwrapDataKey } = await import("./request.js");
+      const salt = base64UrlToBytes(v.hkdf_salt_b64);
+      const wrapIv = base64UrlToBytes(v.wrap_iv_b64);
+
+      // responder side reproduces the recorded wrapped key exactly
+      const responderKey = await deriveWrappingKey(
+        v.responder_private_key_pkcs8_b64,
+        v.requester_public_key_b64,
+        salt,
+      );
+      const rewrapped = await wrapDataKey(
+        base64UrlToBytes(v.data_key_b64),
+        responderKey,
+        wrapIv,
+      );
+      expect(rewrapped).toBe(v.wrapped_key_b64);
+
+      // requester side unwraps to the original data key
+      const requesterKey = await deriveWrappingKey(
+        v.requester_private_key_pkcs8_b64,
+        v.responder_public_key_b64,
+        salt,
+      );
+      const unwrapped = await unwrapDataKey(v.wrapped_key_b64, requesterKey, wrapIv);
+      expect(bytesToBase64Url(unwrapped)).toBe(v.data_key_b64);
+    });
+
+    it(`decrypts the payload with the unwrapped data key: ${v.name}`, async () => {
+      const key = await importKeyExtractable(v.data_key_b64);
+      const decrypted = await decrypt(
+        {
+          ciphertext: base64UrlToBytes(v.ciphertext_b64).buffer as ArrayBuffer,
+          iv: base64UrlToBytes(v.iv_b64),
+        },
+        key,
+      );
+      expect(decrypted).toBe(v.plaintext);
+    });
+
+    it(`reproduces claim proof and fingerprint: ${v.name}`, async () => {
+      const { computeClaimProof, computeFingerprint } = await import("./request.js");
+      expect(await computeClaimProof(v.requester_private_key_pkcs8_b64)).toBe(v.claim_proof);
+      expect(await computeFingerprint(v.requester_public_key_b64)).toBe(v.requester_fingerprint);
+    });
+  }
+});

@@ -77,5 +77,25 @@
       "plaintext": "unicode password test",
       "ciphertext_b64": "PwXEF4oOm-Qom8zE6l0d9UYLB8I0mDJop4g70B8XzsG5RbX1xw"
     }
+  ],
+  "request_vectors": [
+    {
+      "name": "request-flow-basic",
+      "description": "ECDH P-256 + HKDF-SHA256 wrap: responder wraps a fixed data key to the requester public key; requester side must unwrap to the same key and decrypt",
+      "requester_public_key_b64": "BHvBnbanQSX69Hzwg1WNsTYU0RROn4eW61iZhRLqJqWnyqM0MGrn2_5VTcUIm7E8YrUQ03eHg8MMWkESj0-Nprw",
+      "requester_private_key_pkcs8_b64": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaOBOADootP2bogHVZMGCe3dqXueHGsQL23r4qkmhQ2mhRANCAAR7wZ22p0El-vR88INVjbE2FNEUTp-HlutYmYUS6ialp8qjNDBq59v-VU3FCJuxPGK1ENN3h4PDDFpBEo9Pjaa8",
+      "responder_public_key_b64": "BMtbdkO6kE6SGwLktnWTQpvZXsYE4MhCJ4Yp5036VnPGMjzx_wceBfVh9QPoS6lYTYZMXzampIpq9UQxk2Ch-Qs",
+      "responder_private_key_pkcs8_b64": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg_N-NHZL6XYmGVQPeoIghcP-wv-rEtAZLZtHtwboQvU6hRANCAATLW3ZDupBOkhsC5LZ1k0Kb2V7GBODIQieGKedN-lZzxjI88f8HHgX1YfUD6EupWE2GTF82pqSKavVEMZNgofkL",
+      "hkdf_salt_b64": "IAAAAAAAAAAAAAAAAAAAAA",
+      "hkdf_info": "deadrop/request-wrap/v1",
+      "wrap_iv_b64": "IQAAAAAAAAAAAAAA",
+      "data_key_b64": "IgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "wrapped_key_b64": "HrGue9y1Avhv3fhFu_ELWB-BuA3ET8qdd2yErTut0nhDuh_XJY_Y4ly12OodyOe2",
+      "iv_b64": "IwAAAAAAAAAAAAAA",
+      "plaintext": "request-flow secret",
+      "ciphertext_b64": "wktM55z2qRYZwFCwaJgPLwTMaG_kZj2FSU77BBIGLXKadG8",
+      "claim_proof": "bL270EwqEDJ-Xow1vkBeoX",
+      "requester_fingerprint": "SWzFnyfq"
+    }
   ]
 }

@@ -15,6 +15,13 @@ import {
   deserializePayload,
 } from "./crypto.js";
 import { bytesToBase64Url, base64UrlToBytes } from "./encoding.js";
+import {
+  deriveWrappingKey,
+  wrapDataKey,
+  computeClaimProof,
+  computeFingerprint,
+  REQUEST_WRAP_INFO,
+} from "./request.js";
 
 interface TestVector {
   name: string;
@@ -44,7 +51,11 @@ async function encryptWithFixedIV(
   iv: Uint8Array,
 ): Promise<ArrayBuffer> {
   const encoded = new TextEncoder().encode(plaintext);
-  return crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
+  return crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: new Uint8Array(iv) as unknown as BufferSource },
+    key,
+    encoded,
+  );
 }
 
 async function main() {
@@ -199,6 +210,63 @@ async function main() {
     });
   }
 
+  // Request-flow vector (SPEC §9): fixed ECDH keypairs generated once and
+  // embedded so regeneration is deterministic. Any implementation must derive
+  // the same wrapping key and produce/verify the same wrapped data key.
+  const requestVectors = [];
+  {
+    const requester = {
+      publicKeyB64:
+        "BHvBnbanQSX69Hzwg1WNsTYU0RROn4eW61iZhRLqJqWnyqM0MGrn2_5VTcUIm7E8YrUQ03eHg8MMWkESj0-Nprw",
+      privateKeyB64:
+        "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaOBOADootP2bogHVZMGCe3dqXueHGsQL23r4qkmhQ2mhRANCAAR7wZ22p0El-vR88INVjbE2FNEUTp-HlutYmYUS6ialp8qjNDBq59v-VU3FCJuxPGK1ENN3h4PDDFpBEo9Pjaa8",
+    };
+    const responder = {
+      publicKeyB64:
+        "BMtbdkO6kE6SGwLktnWTQpvZXsYE4MhCJ4Yp5036VnPGMjzx_wceBfVh9QPoS6lYTYZMXzampIpq9UQxk2Ch-Qs",
+      privateKeyB64:
+        "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg_N-NHZL6XYmGVQPeoIghcP-wv-rEtAZLZtHtwboQvU6hRANCAATLW3ZDupBOkhsC5LZ1k0Kb2V7GBODIQieGKedN-lZzxjI88f8HHgX1YfUD6EupWE2GTF82pqSKavVEMZNgofkL",
+    };
+    const hkdfSalt = new Uint8Array(16);
+    hkdfSalt[0] = 0x20;
+    const wrapIv = new Uint8Array(12);
+    wrapIv[0] = 0x21;
+    const dataKeyRaw = new Uint8Array(32);
+    dataKeyRaw[0] = 0x22;
+    const dataKey = await importKeyExtractable(bytesToBase64Url(dataKeyRaw));
+    const iv = new Uint8Array(12);
+    iv[0] = 0x23;
+    const plaintext = "request-flow secret";
+
+    const wrappingKey = await deriveWrappingKey(
+      responder.privateKeyB64,
+      requester.publicKeyB64,
+      hkdfSalt,
+    );
+    const wrappedKey = await wrapDataKey(dataKeyRaw, wrappingKey, wrapIv);
+    const ct = await encryptWithFixedIV(plaintext, dataKey, iv);
+
+    requestVectors.push({
+      name: "request-flow-basic",
+      description:
+        "ECDH P-256 + HKDF-SHA256 wrap: responder wraps a fixed data key to the requester public key; requester side must unwrap to the same key and decrypt",
+      requester_public_key_b64: requester.publicKeyB64,
+      requester_private_key_pkcs8_b64: requester.privateKeyB64,
+      responder_public_key_b64: responder.publicKeyB64,
+      responder_private_key_pkcs8_b64: responder.privateKeyB64,
+      hkdf_salt_b64: bytesToBase64Url(hkdfSalt),
+      hkdf_info: REQUEST_WRAP_INFO,
+      wrap_iv_b64: bytesToBase64Url(wrapIv),
+      data_key_b64: bytesToBase64Url(dataKeyRaw),
+      wrapped_key_b64: wrappedKey,
+      iv_b64: bytesToBase64Url(iv),
+      plaintext,
+      ciphertext_b64: bytesToBase64Url(new Uint8Array(ct)),
+      claim_proof: await computeClaimProof(requester.privateKeyB64),
+      requester_fingerprint: await computeFingerprint(requester.publicKeyB64),
+    });
+  }
+
   const output = {
     version: 1,
     algorithm: "AES-256-GCM",
@@ -210,6 +278,7 @@ async function main() {
     encoding: "base64url (RFC 4648 §5, no padding)",
     vectors,
     password_vectors: passwordVectors,
+    request_vectors: requestVectors,
   };
 
   console.log(JSON.stringify(output, null, 2));
