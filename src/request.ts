@@ -74,6 +74,32 @@ export async function computeFingerprint(publicKeyB64: string): Promise<string> 
   return bytesToBase64Url(new Uint8Array(hash)).slice(0, FINGERPRINT_LENGTH);
 }
 
+/**
+ * Recover the base64url raw public key from a PKCS8 private key — the claim
+ * UI only holds the private key (URL fragment) but MUST display the public
+ * key's fingerprint (SPEC §9.4). The P-256 public point is embedded in the
+ * private key's JWK as x/y coordinates.
+ */
+export async function derivePublicKeyB64(privateKeyB64: string): Promise<string> {
+  const pkcs8 = base64UrlToBytes(privateKeyB64);
+  const privateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    pkcs8.buffer as ArrayBuffer,
+    ECDH_PARAMS,
+    true,
+    ["deriveBits"],
+  );
+  const jwk = await crypto.subtle.exportKey("jwk", privateKey);
+  if (!jwk.x || !jwk.y) throw new Error("Private key JWK lacks public coordinates");
+  const x = base64UrlToBytes(jwk.x);
+  const y = base64UrlToBytes(jwk.y);
+  const raw = new Uint8Array(1 + x.length + y.length);
+  raw[0] = 0x04;
+  raw.set(x, 1);
+  raw.set(y, 1 + x.length);
+  return bytesToBase64Url(raw);
+}
+
 async function importPublicKey(publicKeyB64: string): Promise<CryptoKey> {
   const raw = base64UrlToBytes(publicKeyB64);
   return crypto.subtle.importKey(

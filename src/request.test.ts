@@ -58,6 +58,14 @@ describe("computeClaimProof", () => {
   });
 });
 
+describe("derivePublicKeyB64", () => {
+  it("recovers exactly the public key the pair was generated with", async () => {
+    const { publicKeyB64, privateKeyB64 } = await generateRequestKeyPair();
+    const { derivePublicKeyB64 } = await import("./request.js");
+    expect(await derivePublicKeyB64(privateKeyB64)).toBe(publicKeyB64);
+  });
+});
+
 describe("computeFingerprint", () => {
   it("is 8 chars, deterministic, and differs across keys", async () => {
     const a = await generateRequestKeyPair();

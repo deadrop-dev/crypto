@@ -20,6 +20,7 @@ export type { EncryptedPayload, DeriveKeyOptions } from "./crypto.js";
 
 export {
   generateRequestKeyPair,
+  derivePublicKeyB64,
   computeClaimProof,
   computeFingerprint,
   deriveWrappingKey,
