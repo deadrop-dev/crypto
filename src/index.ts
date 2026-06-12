@@ -19,6 +19,23 @@ export {
 export type { EncryptedPayload, DeriveKeyOptions } from "./crypto.js";
 
 export {
+  generateRequestKeyPair,
+  computeClaimProof,
+  computeFingerprint,
+  deriveWrappingKey,
+  wrapDataKey,
+  unwrapDataKey,
+  encryptForRequest,
+  decryptResponse,
+  REQUEST_WRAP_INFO,
+  HKDF_SALT_LENGTH,
+  FINGERPRINT_LENGTH,
+  CLAIM_PROOF_LENGTH,
+} from "./request.js";
+
+export type { RequestKeyPair, RequestResponse } from "./request.js";
+
+export {
   bytesToBase64Url,
   base64UrlToBytes,
   timingSafeEqual,
