@@ -1,8 +1,15 @@
 # Deadrop Cryptographic & Protocol Specification
 
-Version: 2.1
+Version: 2.2
 
 ## Changelog
+
+**2.2 (2026-06-13)** — additive over 2.1.
+
+- **File payloads are specified** (§10): a canonical JSON envelope inside the
+  encryption — no new wire fields, no content-class metadata anywhere; the
+  server cannot tell a file from a note. Normative for clients that claim
+  file support; invisible to servers.
 
 **2.1 (2026-06-12)** — additive over 2.0.
 
@@ -268,6 +275,68 @@ The reverse flow: a **requester** asks for a secret; a **responder** supplies it
 ### §9.4 Threat model honesty
 
 The server hands the responder the requester's public key, so a malicious server could substitute its own (machine-in-the-middle) and read the response. Mitigation: both the fulfill and claim UIs MUST display the §9.1 fingerprint of the requester public key they are using, so the parties can compare out-of-band. This is honest mitigation, not elimination — the same residual trust in served JavaScript applies to every zero-knowledge web application. State it; do not pretend otherwise.
+
+## §10 File Payloads — Normative for clients claiming file support since 2.2
+
+A file is NOT a new wire concept. It is a plaintext **envelope** encrypted
+exactly like a text secret — same create call, same retrieval, same burn, same
+URL format. A server cannot tell a file from a note, and MUST NOT be asked to:
+no field anywhere in the protocol carries a filename, mime type, size, or any
+other content-class signal. (Same plaintext-only-detection principle as
+client-side `.env` rendering.)
+
+### §10.1 Envelope
+
+The plaintext of a file secret is this canonical JSON, in exactly this key
+order, with no added whitespace, `data` base64url-encoded:
+
+```json
+{"dd":"file/v1","name":"<filename>","type":"<mime or \"\">","data":"<base64url bytes>"}
+```
+
+Canonical-form equality is testable: identical (name, type, bytes) MUST
+serialize to the identical string across implementations (`JSON.stringify`
+semantics: insertion order, minimal escaping, non-ASCII kept raw).
+
+### §10.2 Detection (recipient)
+
+Decrypted plaintext is a file envelope iff ALL hold: it starts with the exact
+prefix `{"dd":"file/v1"`; it parses as JSON; `name` and `data` are strings
+(`type` missing is read as `""`); `data` matches `^[A-Za-z0-9_-]*$` and
+decodes as base64url. Anything else renders as text.
+
+**Collision honesty:** a text secret whose exact content is a valid envelope
+renders as a file whose download contains the `data` bytes. This is
+byte-preserving, deliberate, and practically impossible to hit by accident;
+implementations MUST NOT add out-of-band disambiguation (that would be a
+content-class signal on the wire).
+
+### §10.3 Recipient duties
+
+- `name` is attacker-controlled. Before writing or offering a download,
+  implementations MUST strip path separators (`\ / : * ? " < > |`) and
+  control characters (U+0000–U+001F, U+007F), and bound the length; an empty
+  or dots-only result falls back to a fixed name. Leading dots MAY be kept
+  (dotfiles like `.env` are a primary use case) — traversal is already
+  impossible once separators are gone.
+- Browser implementations MUST serve downloads as `application/octet-stream`
+  regardless of `type` (display-only), so a hostile mime can never make the
+  browser render the payload inline.
+- File writers MUST NOT silently overwrite an existing file.
+
+### §10.4 Size
+
+Clients SHOULD cap raw file bytes at **256 KiB** (the reference free tier).
+The envelope of a max-size file encrypts to ~467K base64url chars; servers
+size `max payload` accordingly (the reference SaaS: 480,000 chars, request
+body ceiling 1 MB). Servers MAY choose other ceilings — the cap is a service
+decision, not a protocol constant. Oversized creates fail with an honest 400,
+never silent truncation.
+
+Request-flow responses (§9) remain text-oriented: their reference ciphertext
+ceiling (64 KB) predates file payloads, and raising it is a separate protocol
+decision. Clients MUST refuse `--file`-style input on the fulfill path with
+an explanation rather than failing obscurely at the server edge.
 
 ## Security Properties
 
